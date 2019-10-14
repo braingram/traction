@@ -1,12 +1,32 @@
 #!/usr/bin/env python3
 
+import http.client
 import http.server
 import json
 import socketserver
 import time
+import urllib.request
 
 # TODO plugins
 # import plugins
+
+
+def server_url_from_context(context):
+    (ip, port) = context.request.getsockname()
+    return 'http://%s:%i%s' % (ip, port, context.path)
+
+
+def send_post(url, data, no_reply=True):
+    req = urllib.request.Request(url)
+    req.add_header("Content-Type", "application/json")
+    bs = json.dumps(data).encode('ascii')
+    req.add_header("Content-Length", len(bs))
+    try:
+        res = urllib.request.urlopen(req, bs)
+    except http.client.RemoteDisconnected as e:
+        if no_reply:
+            return
+        raise e
 
 
 class Trigger(object):
@@ -93,7 +113,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         t = Trigger(jdata)
 
         # look for resulting actions
-        self.server.process_trigger(t)
+        self.server.process_trigger(t, self)
 
 
 class TractionServer(socketserver.ThreadingMixIn, http.server.HTTPServer, object):
@@ -109,15 +129,15 @@ class TractionServer(socketserver.ThreadingMixIn, http.server.HTTPServer, object
     def register_trigger(self, trigger_match, action):
         self._registrations.append((trigger_match, action))
 
-    def process_trigger(self, trigger):
-        print("Process trigger: %s" % trigger)
+    def process_trigger(self, trigger, context):
+        print("Process trigger: %s[%s]" % (trigger, vars(trigger)))
         # TODO log trigger
         for r in self._registrations:
             mf, action = r
             if mf(trigger):
                 print("Starting action: %s" % action.__name__)
                 a = action()
-                a.trigger(trigger, self)
+                a.trigger(trigger, context)
                 # TODO release trigger?
                 # TODO store action?
 
